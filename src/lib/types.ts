@@ -28,6 +28,7 @@ export type Question = {
   quiz_id: string
   question_text: string
   code_snippet: string | null
+  concept: string | null
   options: string[]
   sort_order: number
 }
@@ -37,6 +38,9 @@ export type BreakdownItem = {
   selected_index: number | null
   correct_option_index: number
   is_correct: boolean
+  question_text?: string
+  explanation?: string | null
+  concept?: string | null
 }
 
 export type Badge = {
@@ -52,6 +56,9 @@ export type QuizResult = {
   total_xp: number
   current_streak: number
   longest_streak: number
+  speed_bonus: number
+  previous_xp: number
+  rank_up: string | null
   breakdown: BreakdownItem[]
   new_badges: Badge[]
 }
@@ -75,6 +82,8 @@ export type AdminQuestion = {
   id?: string
   question_text: string
   code_snippet: string | null
+  concept?: string | null
+  explanation?: string | null
   options: string[]
   correct_option_index: number
   sort_order: number
@@ -90,6 +99,13 @@ export type AdminQuiz = {
   is_active: boolean
   submission_count: number
   questions: AdminQuestion[]
+}
+
+export type FloorPulse = {
+  finished_today: number
+  engineers: number
+  your_place: number
+  gap_above: number
 }
 
 export const DISCIPLINES = [

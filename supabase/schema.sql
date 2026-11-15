@@ -62,7 +62,9 @@ create table if not exists public.questions (
   -- Hidden from the browser. Column privileges below refuse SELECT.
   -- Grading happens only inside submit_daily_quiz.
   correct_option_index integer not null check (correct_option_index >= 0),
-  sort_order integer not null default 0
+  sort_order integer not null default 0,
+  concept text,
+  explanation text
 );
 
 create table if not exists public.submissions (
@@ -95,6 +97,16 @@ create index if not exists submissions_user_idx on public.submissions (user_id, 
 
 comment on column public.questions.correct_option_index is
   'Server-only. Authenticated clients have no SELECT privilege on this column.';
+
+comment on column public.questions.explanation is
+  'Shown only after submit_daily_quiz. Clients have no SELECT privilege on this column.';
+
+create table if not exists public.quiz_starts (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  quiz_id uuid not null references public.quizzes (id) on delete cascade,
+  started_at timestamptz not null default clock_timestamp(),
+  primary key (user_id, quiz_id)
+);
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -330,6 +342,9 @@ declare
   base_xp integer;
   bonus_xp integer;
   earned integer;
+  previous_xp integer;
+  speed_bonus integer := 0;
+  started timestamptz;
   breakdown jsonb := '[]'::jsonb;
   awarded jsonb := '[]'::jsonb;
   badge_row public.badges%rowtype;
@@ -363,7 +378,7 @@ begin
   end if;
 
   for question in
-    select id, correct_option_index
+    select id, correct_option_index, question_text, explanation, concept
     from public.questions
     where quiz_id = p_quiz_id
     order by sort_order, id
@@ -391,7 +406,10 @@ begin
         'question_id', question.id,
         'selected_index', selected,
         'correct_option_index', question.correct_option_index,
-        'is_correct', is_correct
+        'is_correct', is_correct,
+        'question_text', question.question_text,
+        'explanation', question.explanation,
+        'concept', question.concept
       )
     );
   end loop;
@@ -408,7 +426,17 @@ begin
 
   base_xp := (quiz.xp_reward * correct_count) / total_count;
   bonus_xp := (base_xp * least(greatest(new_streak - 1, 0), 10) * 5) / 100;
-  earned := base_xp + bonus_xp;
+
+  select started_at into started
+  from public.quiz_starts
+  where user_id = uid and quiz_id = p_quiz_id;
+
+  if found and correct_count > 0 and clock_timestamp() - started <= interval '4 minutes' then
+    speed_bonus := least(24, base_xp / 5);
+  end if;
+
+  earned := base_xp + bonus_xp + speed_bonus;
+  previous_xp := prof.total_xp;
 
   begin
     insert into public.submissions (user_id, quiz_id, score, xp_earned, detail)
@@ -436,6 +464,7 @@ begin
         or (b.slug = 'perfect_score' and correct_count = total_count)
         or (b.slug = 'streak_7' and new_streak >= 7)
         or (b.slug = 'ironman_30' and new_streak >= 30)
+        or (b.slug = 'quick_draw' and speed_bonus > 0)
       )
       and not exists (
         select 1
@@ -459,9 +488,16 @@ begin
     'score', correct_count,
     'total', total_count,
     'xp_earned', earned,
+    'speed_bonus', speed_bonus,
+    'previous_xp', previous_xp,
     'total_xp', prof.total_xp,
     'current_streak', prof.current_streak,
     'longest_streak', prof.longest_streak,
+    'rank_up', case
+      when public.rank_title(previous_xp) is distinct from public.rank_title(prof.total_xp)
+        then public.rank_title(prof.total_xp)
+      else null
+    end,
     'breakdown', breakdown,
     'new_badges', awarded
   );
@@ -470,6 +506,97 @@ $$;
 
 revoke all on function public.submit_daily_quiz(uuid, jsonb) from public;
 grant execute on function public.submit_daily_quiz(uuid, jsonb) to authenticated;
+
+create or replace function public.rank_title(p_xp integer)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when p_xp >= 1500 then 'Principal Engineer'
+    when p_xp >= 700 then 'Staff Engineer'
+    when p_xp >= 300 then 'Senior Engineer'
+    when p_xp >= 100 then 'Junior Engineer'
+    else 'Intern'
+  end;
+$$;
+
+create or replace function public.start_daily_quiz(p_quiz_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  started timestamptz;
+begin
+  if uid is null then
+    raise exception 'Sign in required';
+  end if;
+
+  if not exists (
+    select 1 from public.quizzes
+    where id = p_quiz_id and is_active and publish_date = public.org_today()
+  ) then
+    raise exception 'Only today''s quiz can be started';
+  end if;
+
+  if exists (
+    select 1 from public.submissions where user_id = uid and quiz_id = p_quiz_id
+  ) then
+    raise exception 'You have already submitted this quiz';
+  end if;
+
+  insert into public.quiz_starts (user_id, quiz_id)
+  values (uid, p_quiz_id)
+  on conflict (user_id, quiz_id) do nothing;
+
+  select started_at into started
+  from public.quiz_starts
+  where user_id = uid and quiz_id = p_quiz_id;
+
+  return jsonb_build_object('started_at', started);
+end;
+$$;
+
+create or replace function public.floor_pulse()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+  mine integer;
+  above integer;
+begin
+  if uid is null then
+    raise exception 'Sign in required';
+  end if;
+
+  select total_xp into mine from public.profiles where id = uid;
+  select min(total_xp) into above from public.profiles where total_xp > coalesce(mine, 0);
+
+  return jsonb_build_object(
+    'finished_today', (
+      select count(*) from public.submissions s
+      where (timezone('Asia/Kolkata', s.completed_at))::date = public.org_today()
+    ),
+    'engineers', (select count(*) from public.profiles),
+    'your_place', 1 + (select count(*) from public.profiles where total_xp > coalesce(mine, 0)),
+    'gap_above', coalesce(above - coalesce(mine, 0), 0)
+  );
+end;
+$$;
+
+revoke all on function public.rank_title(integer) from public;
+revoke all on function public.start_daily_quiz(uuid) from public;
+revoke all on function public.floor_pulse() from public;
+grant execute on function public.rank_title(integer) to authenticated;
+grant execute on function public.start_daily_quiz(uuid) to authenticated;
+grant execute on function public.floor_pulse() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Admin RPCs. The anon key can call these; is_admin() is the gate.
@@ -588,7 +715,9 @@ begin
                     'code_snippet', q.code_snippet,
                     'options', q.options,
                     'correct_option_index', q.correct_option_index,
-                    'sort_order', q.sort_order
+                    'sort_order', q.sort_order,
+                    'concept', q.concept,
+                    'explanation', q.explanation
                   )
                   order by q.sort_order, q.id
                 )
@@ -703,7 +832,9 @@ begin
       code_snippet,
       options,
       correct_option_index,
-      sort_order
+      sort_order,
+      concept,
+      explanation
     )
     values (
       quiz_row.id,
@@ -711,7 +842,9 @@ begin
       nullif(btrim(coalesce(question ->> 'code_snippet', '')), ''),
       question -> 'options',
       (question ->> 'correct_option_index')::integer,
-      idx
+      idx,
+      nullif(btrim(coalesce(question ->> 'concept', '')), ''),
+      nullif(btrim(coalesce(question ->> 'explanation', '')), '')
     );
     idx := idx + 1;
   end loop;
@@ -740,6 +873,7 @@ alter table public.profiles enable row level security;
 alter table public.quizzes enable row level security;
 alter table public.questions enable row level security;
 alter table public.submissions enable row level security;
+alter table public.quiz_starts enable row level security;
 alter table public.badges enable row level security;
 alter table public.user_badges enable row level security;
 
@@ -790,6 +924,11 @@ create policy questions_admin_write on public.questions
   using (public.is_admin())
   with check (public.is_admin());
 
+drop policy if exists quiz_starts_read_own on public.quiz_starts;
+create policy quiz_starts_read_own on public.quiz_starts
+  for select to authenticated
+  using (user_id = auth.uid());
+
 drop policy if exists submissions_read_own on public.submissions;
 create policy submissions_read_own on public.submissions
   for select to authenticated
@@ -825,10 +964,13 @@ grant select (
   question_text,
   code_snippet,
   options,
-  sort_order
+  sort_order,
+  concept
 ) on table public.questions to authenticated;
 grant insert, update, delete on table public.questions to authenticated;
 grant select on table public.submissions to authenticated;
+revoke all on table public.quiz_starts from anon, authenticated;
+grant select on table public.quiz_starts to authenticated;
 grant select on table public.badges to authenticated;
 grant select on table public.user_badges to authenticated;
 
@@ -851,7 +993,8 @@ insert into public.badges (slug, name, description) values
   ('first_blood', 'First Blood', 'Complete your first daily quiz'),
   ('perfect_score', '100% Accuracy', 'Answer every question correctly in a daily quiz'),
   ('streak_7', '7-Day Streak', 'Complete the daily quiz seven days in a row'),
-  ('ironman_30', '30-Day Ironman', 'Complete the daily quiz thirty days in a row')
+  ('ironman_30', '30-Day Ironman', 'Complete the daily quiz thirty days in a row'),
+  ('quick_draw', 'Quick Draw', 'Finish today''s quiz within 4 minutes with at least one correct answer')
 on conflict (slug) do update
 set name = excluded.name,
     description = excluded.description;

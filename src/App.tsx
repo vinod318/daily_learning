@@ -6,6 +6,7 @@ import { Dashboard } from './pages/Dashboard'
 import { QuizArena } from './pages/QuizArena'
 import { Leaderboard } from './pages/Leaderboard'
 import { AdminPage } from './pages/AdminPage'
+import { NotesPage } from './pages/NotesPage'
 
 function BootScreen() {
   return (
@@ -28,6 +29,7 @@ export function App() {
         <Route path="/today" element={<Dashboard />} />
         <Route path="/quiz/:quizId" element={<QuizArena />} />
         <Route path="/board" element={<Leaderboard />} />
+        <Route path="/notes" element={<NotesPage />} />
         <Route path="/admin" element={<AdminPage />} />
       </Route>
       <Route path="*" element={<Navigate to={session ? '/today' : '/'} replace />} />

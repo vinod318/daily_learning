@@ -7,6 +7,8 @@ import type { AdminQuiz, AllowlistEntry, Difficulty, Role } from '../lib/types'
 type DraftQuestion = {
   question_text: string
   code_snippet: string
+  concept: string
+  explanation: string
   options: string[]
   correct_option_index: number
 }
@@ -14,6 +16,8 @@ type DraftQuestion = {
 const emptyQuestion = (): DraftQuestion => ({
   question_text: '',
   code_snippet: '',
+  concept: '',
+  explanation: '',
   options: ['', '', '', ''],
   correct_option_index: 0,
 })
@@ -118,6 +122,8 @@ export function AdminPage() {
           return {
             question_text: question.question_text,
             code_snippet: question.code_snippet,
+            concept: question.concept,
+            explanation: question.explanation,
             options,
             correct_option_index: question.correct_option_index,
           }
@@ -220,6 +226,19 @@ export function AdminPage() {
                 placeholder="Optional code"
                 value={question.code_snippet}
                 onChange={(event) => updateQuestion(index, { code_snippet: event.target.value })}
+              />
+              <input
+                className={fieldClass}
+                placeholder="Concept, such as ADC"
+                value={question.concept}
+                onChange={(event) => updateQuestion(index, { concept: event.target.value })}
+              />
+              <textarea
+                className={fieldClass}
+                rows={2}
+                placeholder="Explanation shown only after an engineer submits"
+                value={question.explanation}
+                onChange={(event) => updateQuestion(index, { explanation: event.target.value })}
               />
               {question.options.map((option, optionIndex) => (
                 <label key={optionIndex} className="flex items-center gap-2 text-sm">

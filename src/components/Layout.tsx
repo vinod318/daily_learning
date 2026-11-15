@@ -21,6 +21,9 @@ export function Layout() {
           <NavLink to="/board" className={linkClass}>
             Board
           </NavLink>
+          <NavLink to="/notes" className={linkClass}>
+            Notes
+          </NavLink>
           {role === 'admin' && (
             <NavLink to="/admin" className={linkClass}>
               Admin

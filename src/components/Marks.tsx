@@ -14,6 +14,7 @@ const PATHS: Record<string, string> = {
   perfect_score: 'M12 3 14.4 8.6 20.5 9.2 16 13.3 17.3 19.3 12 16.2 6.7 19.3 8 13.3 3.5 9.2 9.6 8.6 12 3Z',
   streak_7: 'M7 16c0-4 2.2-6 5-9 2.8 3 5 5 5 9a5 5 0 0 1-10 0Z',
   ironman_30: 'M4 14.5 12 4l8 10.5v5H4v-5Zm8-1.2 3.2 3.2H8.8L12 13.3Z',
+  quick_draw: 'M13 2 4 14h7l-1 8 9-12h-7l1-8Z',
 }
 
 export function BadgeMark({ slug, earned }: { slug: string; earned: boolean }) {

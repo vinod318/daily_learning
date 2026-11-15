@@ -7,6 +7,7 @@ import { requireSupabase } from '../lib/supabase'
 import type { BreakdownItem, Question, Quiz, QuizResult, Submission } from '../lib/types'
 
 const LIMIT_SECONDS = 10 * 60
+const SPEED_WINDOW_MS = 4 * 60 * 1000
 
 function clock(total: number) {
   const minutes = Math.floor(total / 60)
@@ -28,6 +29,7 @@ export function QuizArena() {
   const [result, setResult] = useState<QuizResult | null>(null)
   const [prior, setPrior] = useState<Submission | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(LIMIT_SECONDS)
+  const [speedEnds, setSpeedEnds] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -46,7 +48,7 @@ export function QuizArena() {
       if (quizResult.error) throw quizResult.error
       const questionResult = await client
         .from('questions')
-        .select('id, quiz_id, question_text, code_snippet, options, sort_order')
+        .select('id, quiz_id, question_text, code_snippet, concept, options, sort_order')
         .eq('quiz_id', quizId)
         .order('sort_order')
       if (questionResult.error) throw questionResult.error
@@ -63,6 +65,7 @@ export function QuizArena() {
       setQuestions(
         ((questionResult.data ?? []) as Array<Question & { options: unknown }>).map((row) => ({
           ...row,
+          concept: row.concept ?? null,
           options: asOptions(row.options),
         })),
       )
@@ -81,6 +84,21 @@ export function QuizArena() {
   }, [profile, quizId])
 
   const reviewing = Boolean(prior || result)
+  useEffect(() => {
+    if (reviewing || !quiz || quiz.publish_date !== orgToday()) return
+    let active = true
+    requireSupabase()
+      .rpc('start_daily_quiz', { p_quiz_id: quiz.id })
+      .then(({ data, error: startError }) => {
+        if (!active || startError || !data) return
+        const started = new Date((data as { started_at: string }).started_at).getTime()
+        if (!Number.isNaN(started)) setSpeedEnds(started + SPEED_WINDOW_MS)
+      })
+    return () => {
+      active = false
+    }
+  }, [reviewing, quiz])
+
   useEffect(() => {
     if (reviewing) return
     const timer = window.setInterval(() => {
@@ -125,6 +143,7 @@ export function QuizArena() {
   const breakdown = new Map<string, BreakdownItem>(
     (result?.breakdown ?? prior?.detail ?? []).map((item) => [item.question_id, item]),
   )
+  const misses = (result?.breakdown ?? prior?.detail ?? []).filter((item) => !item.is_correct && item.explanation)
   const score = result?.score ?? prior?.score
   const total = result?.total ?? questions.length
 
@@ -141,10 +160,17 @@ export function QuizArena() {
           </p>
         </div>
         {!reviewing && (
-          <p className={`font-mono text-lg ${secondsLeft < 60 ? 'text-danger' : 'text-brass'}`}>
-            {clock(secondsLeft)}
-            {secondsLeft === 0 && <span className="ml-2 font-sans text-sm">Time is up — submit what you have.</span>}
-          </p>
+          <div className="text-right">
+            <p className={`font-mono text-lg ${secondsLeft < 60 ? 'text-danger' : 'text-brass'}`}>
+              {clock(secondsLeft)}
+            </p>
+            <p className="text-xs text-muted">
+              {speedEnds && Date.now() < speedEnds
+                ? `Speed bonus ${clock(Math.ceil((speedEnds - Date.now()) / 1000))}`
+                : 'Speed bonus closed'}
+            </p>
+            {secondsLeft === 0 && <p className="text-sm text-danger">Time is up — submit what you have.</p>}
+          </div>
         )}
       </div>
 
@@ -154,6 +180,10 @@ export function QuizArena() {
             {score}/{total}
             {result ? ` · +${result.xp_earned} XP · streak ${result.current_streak}` : prior ? ` · +${prior.xp_earned} XP` : ''}
           </p>
+          {result && result.speed_bonus > 0 && (
+            <p className="mt-1 text-sm text-brass">Quick Draw +{result.speed_bonus} XP for finishing inside 4 minutes.</p>
+          )}
+          {result?.rank_up && <p className="mt-1 text-sm text-foam">Promoted to {result.rank_up}.</p>}
           {result && result.new_badges.length > 0 && (
             <p className="mt-1 text-sm text-brass">
               New badge{result.new_badges.length > 1 ? 's' : ''}: {result.new_badges.map((badge) => badge.name).join(', ')}
@@ -162,12 +192,30 @@ export function QuizArena() {
         </section>
       )}
 
+      {misses.length > 0 && (
+        <section className="rounded-xl border border-brass/40 bg-panel p-4">
+          <h2 className="text-sm uppercase tracking-wide text-brass">Field notes</h2>
+          <ul className="mt-3 space-y-3">
+            {misses.map((item) => (
+              <li key={item.question_id}>
+                <p className="text-xs text-muted">{item.concept ?? 'Review'}</p>
+                <p className="text-sm">{item.question_text}</p>
+                <p className="mt-1 text-sm leading-6 text-foam">{item.explanation}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <ol className="space-y-5">
         {questions.map((question, index) => {
           const graded = breakdown.get(question.id)
           return (
             <li key={question.id} className="rounded-xl border border-line bg-panel p-4">
-              <p className="text-xs text-muted">Question {index + 1}</p>
+              <p className="text-xs text-muted">
+                Question {index + 1}
+                {question.concept ? ` · ${question.concept}` : ''}
+              </p>
               <p className="mt-1">{question.question_text}</p>
               {question.code_snippet && (
                 <div className="mt-3">
@@ -197,6 +245,9 @@ export function QuizArena() {
                   )
                 })}
               </div>
+              {graded?.explanation && (
+                <p className="mt-3 border-t border-line pt-3 text-sm leading-6 text-foam">{graded.explanation}</p>
+              )}
             </li>
           )
         })}
