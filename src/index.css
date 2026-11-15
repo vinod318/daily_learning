@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-ink: #e7ecf1;
+  --color-muted: #93a0b0;
+  --color-brass: #e0a45a;
+  --color-brass-deep: #b8833d;
+  --color-foam: #8fd0c0;
+  --color-panel: #141a22;
+  --color-panel-2: #1b232e;
+  --color-line: #2c3644;
+  --color-danger: #e36a72;
+  --color-ok: #3dbe8b;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background:
+    radial-gradient(880px 420px at 100% -10%, rgba(224, 164, 90, 0.16), transparent 55%),
+    radial-gradient(720px 380px at -12% 110%, rgba(90, 140, 170, 0.16), transparent 50%),
+    #0c1016;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.hljs {
+  background: transparent;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .flame {
+    transform-origin: 50% 80%;
+    animation: flicker 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.82;
+  }
+}
