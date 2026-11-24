@@ -73,18 +73,18 @@ export function AuthPage() {
       <section>
         <p className="text-sm tracking-[0.18em] text-brass">DAILY LEARNING</p>
         <h1 className="mt-3 max-w-md text-4xl font-medium leading-tight">
-          One quiz. Every working day. The floor ranks itself.
+          One sitting. One attempt. Then the notes stay.
         </h1>
         <p className="mt-4 max-w-md text-sm leading-6 text-muted">
-          Firmware, hardware, and software engineers on the allowlist. Answers are graded in
-          Postgres. The browser never receives the correct option until you submit.
+          A quiz stays open after its day. You can take it whenever you sit down. Grading happens
+          in the database, and a miss becomes a field note.
         </p>
         <ol className="mt-8 space-y-2 text-sm text-muted">
           <li>0 XP — Intern</li>
-          <li>100 XP — Junior Engineer</li>
-          <li>300 XP — Senior Engineer</li>
-          <li>700 XP — Staff Engineer</li>
-          <li>1500 XP — Principal Engineer</li>
+          <li>15 XP — Junior Engineer</li>
+          <li>40 XP — Senior Engineer</li>
+          <li>90 XP — Staff Engineer</li>
+          <li>160 XP — Principal Engineer</li>
         </ol>
       </section>
 

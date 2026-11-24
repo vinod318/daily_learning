@@ -7,7 +7,6 @@ import { orgToday } from '../lib/dates'
 import { requireSupabase } from '../lib/supabase'
 import type { Badge, BreakdownItem, Question, Quiz, QuizResult, Submission } from '../lib/types'
 
-const LIMIT_SECONDS = 30 * 60
 const FAST_MS = 4 * 60 * 1000
 
 function clock(total: number) {
@@ -52,7 +51,8 @@ export function QuizArena() {
   const [result, setResult] = useState<QuizResult | null>(null)
   const [prior, setPrior] = useState<Submission | null>(null)
   const [paperBadges, setPaperBadges] = useState<Badge[]>([])
-  const [secondsLeft, setSecondsLeft] = useState(LIMIT_SECONDS)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -139,8 +139,10 @@ export function QuizArena() {
     let active = true
     requireSupabase()
       .rpc('start_daily_quiz', { p_quiz_id: quiz.id })
-      .then(() => {
-        if (!active) return
+      .then(({ data }) => {
+        if (!active || !data) return
+        const started = new Date((data as { started_at: string }).started_at).getTime()
+        if (!Number.isNaN(started)) setStartedAt(started)
       })
     return () => {
       active = false
@@ -149,9 +151,7 @@ export function QuizArena() {
 
   useEffect(() => {
     if (reviewing) return
-    const timer = window.setInterval(() => {
-      setSecondsLeft((current) => (current > 0 ? current - 1 : 0))
-    }, 1000)
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [reviewing])
 
@@ -162,7 +162,7 @@ export function QuizArena() {
       return
     }
     const unanswered = questions.some((question) => picks[question.id] === undefined)
-    if (unanswered && secondsLeft > 0) {
+    if (unanswered) {
       setError('Answer every question before submitting.')
       return
     }
@@ -184,6 +184,9 @@ export function QuizArena() {
     setResult(data as QuizResult)
     await refreshProfile()
   }
+
+  const elapsed = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0
+  const quickLeft = Math.max(0, Math.ceil((FAST_MS - elapsed * 1000) / 1000))
 
   if (loading) return <p className="text-sm text-muted">Opening the quiz…</p>
   if (!quiz) return <p className="text-sm text-muted">That quiz is not available.</p>
@@ -209,11 +212,10 @@ export function QuizArena() {
         </div>
         {!reviewing && (
           <div className="text-right">
-            <p className={`font-mono text-lg ${secondsLeft < 120 ? 'text-danger' : 'text-brass'}`}>
-              {clock(secondsLeft)}
+            <p className="font-mono text-lg text-brass">{clock(elapsed)}</p>
+            <p className="text-xs text-muted">
+              {quickLeft > 0 ? `Quick Draw ${clock(quickLeft)}` : 'Quick Draw closed'}
             </p>
-            <p className="text-xs text-muted">30 minutes. Inside 4:00 with a correct answer earns Quick Draw.</p>
-            {secondsLeft === 0 && <p className="text-sm text-danger">Time is up — submit what you have.</p>}
           </div>
         )}
       </div>

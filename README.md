@@ -78,7 +78,7 @@ The dev server uses the same base path: http://localhost:5173/daily_learning/
 - Any active quiz dated today or earlier can be submitted once. The `(user_id, quiz_id)` unique key makes a second attempt fail.
 - XP, streak, and `last_quiz_date` cannot be patched from the client. A profile trigger rejects those columns unless the grading function set the transaction flag.
 
-Ranks, from total XP: Intern (0), Junior Engineer (100), Senior Engineer (300), Staff Engineer (700), Principal Engineer (1500).
+Ranks, from total XP: Intern (0), Junior Engineer (15), Senior Engineer (40), Staff Engineer (90), Principal Engineer (160). One correct answer is 1 XP.
 
 Badges: First Blood, 100% Accuracy, 7-Day Streak, 30-Day Ironman.
 

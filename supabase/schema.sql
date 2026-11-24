@@ -535,10 +535,10 @@ language sql
 immutable
 as $$
   select case
-    when p_xp >= 1500 then 'Principal Engineer'
-    when p_xp >= 700 then 'Staff Engineer'
-    when p_xp >= 300 then 'Senior Engineer'
-    when p_xp >= 100 then 'Junior Engineer'
+    when p_xp >= 160 then 'Principal Engineer'
+    when p_xp >= 90 then 'Staff Engineer'
+    when p_xp >= 40 then 'Senior Engineer'
+    when p_xp >= 15 then 'Junior Engineer'
     else 'Intern'
   end;
 $$;

@@ -1,9 +1,9 @@
 const LADDER = [
   { title: 'Intern', min: 0 },
-  { title: 'Junior Engineer', min: 100 },
-  { title: 'Senior Engineer', min: 300 },
-  { title: 'Staff Engineer', min: 700 },
-  { title: 'Principal Engineer', min: 1500 },
+  { title: 'Junior Engineer', min: 15 },
+  { title: 'Senior Engineer', min: 40 },
+  { title: 'Staff Engineer', min: 90 },
+  { title: 'Principal Engineer', min: 160 },
 ] as const
 
 export type Rank = {

@@ -193,9 +193,11 @@ export function Dashboard() {
         </article>
       </section>
 
+      <OpenQuizzes quizzes={quizzes.filter((item) => !attempted.has(item.id))} />
+
       <p className="text-xs text-muted">
-        Each correct answer is 1 XP. A released quiz stays open until you submit it, and you only get one attempt.
-        Misses become field notes.
+        One correct answer is 1 XP. There is no countdown. Finish inside 4 minutes with a correct answer for Quick Draw.
+        A miss stays in your field notes.
       </p>
 
       <section className="grid gap-3 lg:grid-cols-[1.6fr_0.8fr]">
@@ -234,15 +236,56 @@ export function Dashboard() {
                 className={`flex gap-3 rounded-xl border p-3 ${have ? 'border-brass/50 bg-panel' : 'border-line bg-panel/50'}`}
               >
                 <BadgeMark slug={badge.slug} earned={have} />
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className={have ? 'text-ink' : 'text-muted'}>{badge.name}</p>
                   <p className="text-xs text-muted">{badge.description}</p>
+                  {!have && <BadgePace slug={badge.slug} streak={profile.current_streak} />}
                 </div>
               </li>
             )
           })}
         </ul>
       </section>
+    </div>
+  )
+}
+
+function OpenQuizzes({ quizzes }: { quizzes: Quiz[] }) {
+  const open = [...quizzes].sort((a, b) => b.publish_date.localeCompare(a.publish_date))
+  return (
+    <section className="rounded-xl border border-line bg-panel p-4">
+      <h2 className="text-sm uppercase tracking-wide text-muted">Still open</h2>
+      {open.length === 0 ? (
+        <p className="mt-2 text-sm text-muted">You're caught up. New quizzes show up here in yellow on the calendar.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line">
+          {open.map((quiz) => (
+            <li key={quiz.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <div>
+                <p>{quiz.title}</p>
+                <p className="text-xs text-muted">{formatOrgDate(quiz.publish_date)} · {quiz.topic}</p>
+              </div>
+              <Link to={`/quiz/${quiz.id}`} className="rounded-md bg-brass px-3 py-1.5 text-sm font-medium text-panel">
+                Sit this one
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function BadgePace({ slug, streak }: { slug: string; streak: number }) {
+  const target = slug === 'streak_7' ? 7 : slug === 'ironman_30' ? 30 : 0
+  if (!target) return null
+  const width = Math.min(100, Math.round((streak / target) * 100))
+  return (
+    <div className="mt-2">
+      <div className="h-1 overflow-hidden rounded-full bg-panel">
+        <div className="h-full bg-brass" style={{ width: `${width}%` }} />
+      </div>
+      <p className="mt-1 text-xs text-muted">{Math.min(streak, target)}/{target} days</p>
     </div>
   )
 }
