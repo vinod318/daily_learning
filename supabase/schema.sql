@@ -315,11 +315,9 @@ create trigger handle_new_engineer
 -- ---------------------------------------------------------------------------
 -- submit_daily_quiz
 --
--- XP: base = xp_reward * correct / total   (integer division)
---     bonus = base * min(streak - 1, 10) * 5 / 100
---     A 4-day streak adds 15%. The bonus caps at 50% on day 11.
--- Streak: +1 when last_quiz_date was yesterday, else reset to 1.
--- Only today's quiz (org_today) can be submitted, and only once.
+-- XP: 1 per correct answer. Streak and speed do not add XP.
+-- Streak: +1 when last_quiz_date was yesterday. A second quiz the same day keeps it.
+-- Any released quiz (publish_date <= org_today) can be submitted once.
 -- ---------------------------------------------------------------------------
 
 create or replace function public.submit_daily_quiz(p_quiz_id uuid, p_answers jsonb)
@@ -344,6 +342,7 @@ declare
   earned integer;
   previous_xp integer;
   speed_bonus integer := 0;
+  quick boolean := false;
   started timestamptz;
   breakdown jsonb := '[]'::jsonb;
   awarded jsonb := '[]'::jsonb;
@@ -362,8 +361,8 @@ begin
     raise exception 'Quiz not found';
   end if;
 
-  if quiz.publish_date <> public.org_today() then
-    raise exception 'Only today''s quiz can be submitted';
+  if quiz.publish_date > public.org_today() then
+    raise exception 'That quiz is not open yet';
   end if;
 
   select * into prof from public.profiles where id = uid for update;
@@ -418,24 +417,26 @@ begin
     raise exception 'This quiz has no questions';
   end if;
 
-  if prof.last_quiz_date = public.org_today() - 1 then
+  if prof.last_quiz_date = public.org_today() then
+    new_streak := prof.current_streak;
+  elsif prof.last_quiz_date = public.org_today() - 1 then
     new_streak := prof.current_streak + 1;
   else
     new_streak := 1;
   end if;
 
-  base_xp := (quiz.xp_reward * correct_count) / total_count;
-  bonus_xp := (base_xp * least(greatest(new_streak - 1, 0), 10) * 5) / 100;
+  base_xp := correct_count;
+  bonus_xp := 0;
 
   select started_at into started
   from public.quiz_starts
   where user_id = uid and quiz_id = p_quiz_id;
 
   if found and correct_count > 0 and clock_timestamp() - started <= interval '4 minutes' then
-    speed_bonus := least(24, base_xp / 5);
+    quick := true;
   end if;
 
-  earned := base_xp + bonus_xp + speed_bonus;
+  earned := correct_count;
   previous_xp := prof.total_xp;
 
   begin
@@ -464,7 +465,7 @@ begin
         or (b.slug = 'perfect_score' and correct_count = total_count)
         or (b.slug = 'streak_7' and new_streak >= 7)
         or (b.slug = 'ironman_30' and new_streak >= 30)
-        or (b.slug = 'quick_draw' and speed_bonus > 0)
+        or (b.slug = 'quick_draw' and quick)
       )
       and not exists (
         select 1
@@ -537,9 +538,9 @@ begin
 
   if not exists (
     select 1 from public.quizzes
-    where id = p_quiz_id and is_active and publish_date = public.org_today()
+    where id = p_quiz_id and is_active and publish_date <= public.org_today()
   ) then
-    raise exception 'Only today''s quiz can be started';
+    raise exception 'That quiz is not open yet';
   end if;
 
   if exists (

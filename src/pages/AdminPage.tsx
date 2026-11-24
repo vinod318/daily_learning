@@ -305,7 +305,7 @@ export function AdminPage() {
                 <span className="font-mono text-muted">{quiz.publish_date}</span> · {quiz.title}
               </p>
               <p className="text-muted">
-                {quiz.topic} · {quiz.difficulty} · {quiz.xp_reward} XP · {quiz.submission_count} submission
+                {quiz.topic} · {quiz.difficulty} · 1 XP per correct answer · {quiz.submission_count} submission
                 {quiz.submission_count === 1 ? '' : 's'}
                 {!quiz.is_active && ' · inactive'}
               </p>

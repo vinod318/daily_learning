@@ -7,7 +7,6 @@ import { requireSupabase } from '../lib/supabase'
 import type { BreakdownItem, Question, Quiz, QuizResult, Submission } from '../lib/types'
 
 const LIMIT_SECONDS = 10 * 60
-const SPEED_WINDOW_MS = 4 * 60 * 1000
 
 function clock(total: number) {
   const minutes = Math.floor(total / 60)
@@ -29,7 +28,6 @@ export function QuizArena() {
   const [result, setResult] = useState<QuizResult | null>(null)
   const [prior, setPrior] = useState<Submission | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(LIMIT_SECONDS)
-  const [speedEnds, setSpeedEnds] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -85,14 +83,12 @@ export function QuizArena() {
 
   const reviewing = Boolean(prior || result)
   useEffect(() => {
-    if (reviewing || !quiz || quiz.publish_date !== orgToday()) return
+    if (reviewing || !quiz || quiz.publish_date > orgToday()) return
     let active = true
     requireSupabase()
       .rpc('start_daily_quiz', { p_quiz_id: quiz.id })
-      .then(({ data, error: startError }) => {
-        if (!active || startError || !data) return
-        const started = new Date((data as { started_at: string }).started_at).getTime()
-        if (!Number.isNaN(started)) setSpeedEnds(started + SPEED_WINDOW_MS)
+      .then(() => {
+        if (!active) return
       })
     return () => {
       active = false
@@ -109,8 +105,8 @@ export function QuizArena() {
 
   async function submit() {
     if (!quiz || !profile) return
-    if (quiz.publish_date !== orgToday()) {
-      setError("Only today's quiz can be submitted.")
+    if (quiz.publish_date > orgToday()) {
+      setError('That quiz is not open yet.')
       return
     }
     const unanswered = questions.some((question) => picks[question.id] === undefined)
@@ -156,7 +152,7 @@ export function QuizArena() {
           </Link>
           <h1 className="mt-1 text-2xl font-medium">{quiz.title}</h1>
           <p className="text-sm text-muted">
-            {quiz.topic} · {quiz.difficulty} · {quiz.xp_reward} XP base
+            {quiz.topic} · {quiz.difficulty} · 1 XP per correct answer
           </p>
         </div>
         {!reviewing && (
@@ -164,11 +160,7 @@ export function QuizArena() {
             <p className={`font-mono text-lg ${secondsLeft < 60 ? 'text-danger' : 'text-brass'}`}>
               {clock(secondsLeft)}
             </p>
-            <p className="text-xs text-muted">
-              {speedEnds && Date.now() < speedEnds
-                ? `Speed bonus ${clock(Math.ceil((speedEnds - Date.now()) / 1000))}`
-                : 'Speed bonus closed'}
-            </p>
+            <p className="text-xs text-muted">1 XP for each correct answer</p>
             {secondsLeft === 0 && <p className="text-sm text-danger">Time is up — submit what you have.</p>}
           </div>
         )}

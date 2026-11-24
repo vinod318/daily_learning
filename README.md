@@ -72,12 +72,10 @@ The dev server uses the same base path: http://localhost:5173/daily_learning/
 
 `submit_daily_quiz` grades on the server, applies XP and the streak, and awards badges.
 
-- Base XP = `xp_reward * correct / question_count` (integer division).
-- Bonus = base × min(streak − 1, 10) × 5%. Day 1 has no bonus. Day 11 and after cap at 50%.
-- A speed bonus of up to 24 XP (20% of the base, capped) applies when the engineer calls `start_daily_quiz` and submits within 4 minutes with at least one correct answer. The clock is the database clock.
+- Each correct answer awards 1 XP. Streak and speed do not add XP.
 - Explanations are not readable from the questions table. They are written into the engineer's own submission after grading, then shown as field notes.
-- Streak increments when `last_quiz_date` was yesterday on the Asia/Kolkata calendar, otherwise it resets to 1.
-- Only the quiz dated today can be submitted, and the `(user_id, quiz_id)` unique key makes a second attempt fail.
+- Streak increments when `last_quiz_date` was yesterday on the Asia/Kolkata calendar. A second quiz on the same day keeps the streak. A gap resets it to 1.
+- Any active quiz dated today or earlier can be submitted once. The `(user_id, quiz_id)` unique key makes a second attempt fail.
 - XP, streak, and `last_quiz_date` cannot be patched from the client. A profile trigger rejects those columns unless the grading function set the transaction flag.
 
 Ranks, from total XP: Intern (0), Junior Engineer (100), Senior Engineer (300), Staff Engineer (700), Principal Engineer (1500).

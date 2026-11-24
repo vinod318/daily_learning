@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { BadgeMark, Flame } from '../components/Marks'
-import { orgToday, formatOrgDate, orgDateFromInstant, recentOrgDates } from '../lib/dates'
+import { MonthBoard } from '../components/MonthBoard'
+import { CALENDAR_START, orgToday, formatOrgDate } from '../lib/dates'
 import { rankFor } from '../lib/ranks'
 import { requireSupabase } from '../lib/supabase'
 import { DISCIPLINES, type Badge, type FloorPulse, type Quiz } from '../lib/types'
@@ -11,12 +12,13 @@ type Earned = { badge_slug: string; awarded_at: string }
 
 export function Dashboard() {
   const { profile, profileLoading, refreshProfile } = useAuth()
-  const [quiz, setQuiz] = useState<Quiz | null>(null)
-  const [taken, setTaken] = useState(false)
+  const [quizzes, setQuizzes] = useState<Quiz[]>([])
+  const [attempted, setAttempted] = useState<Set<string>>(new Set())
+  const todayParts = orgToday().split('-').map(Number)
+  const [cursor, setCursor] = useState({ year: todayParts[0], month: todayParts[1] })
   const [catalog, setCatalog] = useState<Badge[]>([])
   const [earned, setEarned] = useState<Earned[]>([])
   const [pulse, setPulse] = useState<FloorPulse | null>(null)
-  const [doneDates, setDoneDates] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [fullName, setFullName] = useState('')
   const [discipline, setDiscipline] = useState<string>(DISCIPLINES[0])
@@ -26,49 +28,30 @@ export function Dashboard() {
     if (!profile) return
     const client = requireSupabase()
     let active = true
-    const today = orgToday()
 
     async function load() {
       const [quizResult, badgeResult, earnedResult, pulseResult, historyResult] = await Promise.all([
         client
           .from('quizzes')
           .select('id, publish_date, title, topic, difficulty, xp_reward')
-          .eq('publish_date', today)
-          .maybeSingle(),
+          .gte('publish_date', `${CALENDAR_START.year}-${String(CALENDAR_START.month).padStart(2, '0')}-01`)
+          .order('publish_date'),
         client.from('badges').select('slug, name, description'),
         client.from('user_badges').select('badge_slug, awarded_at').eq('user_id', profile!.id),
         client.rpc('floor_pulse'),
-        client.from('submissions').select('completed_at').eq('user_id', profile!.id),
+        client.from('submissions').select('quiz_id').eq('user_id', profile!.id),
       ])
       if (!active) return
       if (quizResult.error) throw quizResult.error
       if (badgeResult.error) throw badgeResult.error
       if (earnedResult.error) throw earnedResult.error
+      if (historyResult.error) throw historyResult.error
 
-      const todayQuiz = quizResult.data as Quiz | null
-      setQuiz(todayQuiz)
+      setQuizzes((quizResult.data ?? []) as Quiz[])
+      setAttempted(new Set(((historyResult.data ?? []) as Array<{ quiz_id: string }>).map((row) => row.quiz_id)))
       setCatalog((badgeResult.data ?? []) as Badge[])
       setEarned((earnedResult.data ?? []) as Earned[])
       if (!pulseResult.error && pulseResult.data) setPulse(pulseResult.data as FloorPulse)
-      if (!historyResult.error) {
-        setDoneDates(
-          ((historyResult.data ?? []) as Array<{ completed_at: string }>).map((row) => orgDateFromInstant(row.completed_at)),
-        )
-      }
-
-      if (todayQuiz) {
-        const submission = await client
-          .from('submissions')
-          .select('id')
-          .eq('quiz_id', todayQuiz.id)
-          .eq('user_id', profile!.id)
-          .maybeSingle()
-        if (!active) return
-        if (submission.error) throw submission.error
-        setTaken(Boolean(submission.data))
-      } else {
-        setTaken(false)
-      }
     }
 
     load().catch((caught: unknown) => {
@@ -149,8 +132,9 @@ export function Dashboard() {
 
   const rank = rankFor(profile.total_xp)
   const earnedSlugs = new Set(earned.map((item) => item.badge_slug))
-  const week = recentOrgDates(7)
-  const done = new Set(doneDates)
+  const today = orgToday()
+  const quiz = quizzes.find((item) => item.publish_date === today) ?? null
+  const taken = quiz ? attempted.has(quiz.id) : false
 
   return (
     <div className="space-y-6">
@@ -185,7 +169,7 @@ export function Dashboard() {
             <>
               <h2 className="mt-2 text-lg">{quiz.title}</h2>
               <p className="text-sm text-muted">
-                {quiz.topic} · {quiz.difficulty} · {quiz.xp_reward} XP base
+                {quiz.topic} · {quiz.difficulty} · 1 XP per correct answer
               </p>
               {taken ? (
                 <p className="mt-3 text-sm text-foam">Completed</p>
@@ -210,30 +194,19 @@ export function Dashboard() {
       </section>
 
       <p className="text-xs text-muted">
-        Score scales the base XP. Each extra streak day adds 5%, up to 50%. Finish within 4 minutes of opening
-        for a speed bonus of up to 24 XP. Misses become field notes.
+        Each correct answer is 1 XP. A released quiz stays open until you submit it, and you only get one attempt.
+        Misses become field notes.
       </p>
 
-      {pulse && (
-        <section className="grid gap-3 sm:grid-cols-[1.4fr_1fr]">
-          <article className="rounded-xl border border-line bg-panel p-4">
-            <p className="text-xs uppercase tracking-wide text-muted">This week</p>
-            <ol className="mt-3 grid grid-cols-7 gap-2">
-              {week.map((day) => {
-                const hit = done.has(day)
-                const label = day.slice(8)
-                return (
-                  <li key={day} className="text-center">
-                    <span
-                      className={`mx-auto grid h-8 w-8 place-items-center rounded-full text-xs ${hit ? 'bg-brass text-panel' : 'border border-line text-muted'}`}
-                    >
-                      {label}
-                    </span>
-                  </li>
-                )
-              })}
-            </ol>
-          </article>
+      <section className="grid gap-3 lg:grid-cols-[1.6fr_0.8fr]">
+        <MonthBoard
+          year={cursor.year}
+          month={cursor.month}
+          quizzes={quizzes}
+          attempted={attempted}
+          onMonth={setCursor}
+        />
+        {pulse && (
           <article className="rounded-xl border border-line bg-panel p-4">
             <p className="text-xs uppercase tracking-wide text-muted">Floor</p>
             <p className="mt-2 text-lg">
@@ -244,8 +217,8 @@ export function Dashboard() {
               {pulse.gap_above > 0 ? ` · ${pulse.gap_above} XP behind the next engineer` : ' · leading the floor'}
             </p>
           </article>
-        </section>
-      )}
+        )}
+      </section>
 
       {error && <p className="text-sm text-danger">{error}</p>}
 
