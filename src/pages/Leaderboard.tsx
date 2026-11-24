@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { Flame } from '../components/Marks'
+import { BadgeMark, Flame } from '../components/Marks'
 import { rankFor } from '../lib/ranks'
 import { requireSupabase } from '../lib/supabase'
 import type { Profile } from '../lib/types'
@@ -11,16 +11,25 @@ const COLUMNS =
 export function Leaderboard() {
   const { profile } = useAuth()
   const [rows, setRows] = useState<Profile[]>([])
+  const [badges, setBadges] = useState<Map<string, string[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const { data, error: queryError } = await requireSupabase()
-      .from('profiles')
-      .select(COLUMNS)
-      .order('total_xp', { ascending: false })
-      .order('current_streak', { ascending: false })
-    if (queryError) throw queryError
-    setRows((data ?? []) as Profile[])
+    const client = requireSupabase()
+    const [people, marks] = await Promise.all([
+      client.from('profiles').select(COLUMNS).order('total_xp', { ascending: false }).order('current_streak', { ascending: false }),
+      client.from('user_badges').select('user_id, badge_slug'),
+    ])
+    if (people.error) throw people.error
+    if (marks.error) throw marks.error
+    const byUser = new Map<string, string[]>()
+    for (const mark of (marks.data ?? []) as Array<{ user_id: string; badge_slug: string }>) {
+      const list = byUser.get(mark.user_id) ?? []
+      list.push(mark.badge_slug)
+      byUser.set(mark.user_id, list)
+    }
+    setRows((people.data ?? []) as Profile[])
+    setBadges(byUser)
   }, [])
 
   useEffect(() => {
@@ -70,6 +79,13 @@ export function Leaderboard() {
                 <p className="text-xs text-muted">
                   {row.engineering_discipline ?? 'Discipline not set'} · {rankFor(row.total_xp).title}
                 </p>
+                {(badges.get(row.id) ?? []).length > 0 && (
+                  <p className="mt-1 flex gap-1">
+                    {(badges.get(row.id) ?? []).map((slug) => (
+                      <BadgeMark key={slug} slug={slug} earned className="h-4 w-4" />
+                    ))}
+                  </p>
+                )}
               </div>
               <div className="text-right text-sm">
                 <p>{row.total_xp} XP</p>

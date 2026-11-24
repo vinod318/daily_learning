@@ -346,6 +346,7 @@ declare
   started timestamptz;
   breakdown jsonb := '[]'::jsonb;
   awarded jsonb := '[]'::jsonb;
+  attempt jsonb := '[]'::jsonb;
   badge_row public.badges%rowtype;
 begin
   if uid is null then
@@ -485,6 +486,25 @@ begin
     );
   end loop;
 
+  for badge_row in
+    select b.*
+    from public.badges b
+    where (b.slug = 'first_blood' and (select count(*) from public.submissions where user_id = uid) = 1)
+      or (b.slug = 'perfect_score' and correct_count = total_count)
+      or (b.slug = 'streak_7' and new_streak >= 7)
+      or (b.slug = 'ironman_30' and new_streak >= 30)
+      or (b.slug = 'quick_draw' and quick)
+    order by b.name
+  loop
+    attempt := attempt || jsonb_build_array(
+      jsonb_build_object(
+        'slug', badge_row.slug,
+        'name', badge_row.name,
+        'description', badge_row.description
+      )
+    );
+  end loop;
+
   return jsonb_build_object(
     'score', correct_count,
     'total', total_count,
@@ -500,7 +520,8 @@ begin
       else null
     end,
     'breakdown', breakdown,
-    'new_badges', awarded
+    'new_badges', awarded,
+    'attempt_badges', attempt
   );
 end;
 $$;

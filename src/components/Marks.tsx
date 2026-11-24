@@ -17,9 +17,9 @@ const PATHS: Record<string, string> = {
   quick_draw: 'M13 2 4 14h7l-1 8 9-12h-7l1-8Z',
 }
 
-export function BadgeMark({ slug, earned }: { slug: string; earned: boolean }) {
+export function BadgeMark({ slug, earned, className = 'h-8 w-8' }: { slug: string; earned: boolean; className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={`h-8 w-8 ${earned ? 'text-brass' : 'text-line'}`} aria-hidden="true">
+    <svg viewBox="0 0 24 24" className={`${className} ${earned ? 'text-brass' : 'text-line'}`} aria-hidden="true">
       <path fill="currentColor" d={PATHS[slug] ?? PATHS.first_blood} />
     </svg>
   )

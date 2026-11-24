@@ -1,17 +1,41 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CodeBlock } from '../components/CodeBlock'
+import { BadgeMark } from '../components/Marks'
 import { useAuth } from '../context/AuthContext'
 import { orgToday } from '../lib/dates'
 import { requireSupabase } from '../lib/supabase'
-import type { BreakdownItem, Question, Quiz, QuizResult, Submission } from '../lib/types'
+import type { Badge, BreakdownItem, Question, Quiz, QuizResult, Submission } from '../lib/types'
 
-const LIMIT_SECONDS = 10 * 60
+const LIMIT_SECONDS = 30 * 60
+const FAST_MS = 4 * 60 * 1000
 
 function clock(total: number) {
   const minutes = Math.floor(total / 60)
   const seconds = total % 60
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function Achievements({ badges }: { badges: Badge[] }) {
+  if (badges.length === 0) {
+    return <p className="mt-3 text-sm text-muted">No achievement on this attempt.</p>
+  }
+  return (
+    <div className="mt-4">
+      <p className="text-xs uppercase tracking-wide text-muted">Achievements</p>
+      <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+        {badges.map((badge) => (
+          <li key={badge.slug} className="flex gap-3 rounded-lg border border-brass/40 bg-panel-2 p-3">
+            <BadgeMark slug={badge.slug} earned />
+            <div>
+              <p>{badge.name}</p>
+              <p className="text-xs text-muted">{badge.description}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 function asOptions(value: unknown): string[] {
@@ -27,6 +51,7 @@ export function QuizArena() {
   const [picks, setPicks] = useState<Record<string, number>>({})
   const [result, setResult] = useState<QuizResult | null>(null)
   const [prior, setPrior] = useState<Submission | null>(null)
+  const [paperBadges, setPaperBadges] = useState<Badge[]>([])
   const [secondsLeft, setSecondsLeft] = useState(LIMIT_SECONDS)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -57,7 +82,34 @@ export function QuizArena() {
         .eq('user_id', profile!.id)
         .maybeSingle()
       if (submissionResult.error) throw submissionResult.error
+      const priorRow = (submissionResult.data as Submission | null) ?? null
+      const [catalogResult, heldResult, startResult, historyResult] = await Promise.all([
+        client.from('badges').select('slug, name, description'),
+        client.from('user_badges').select('badge_slug').eq('user_id', profile!.id),
+        client.from('quiz_starts').select('started_at').eq('user_id', profile!.id).eq('quiz_id', quizId).maybeSingle(),
+        client.from('submissions').select('completed_at').eq('user_id', profile!.id).order('completed_at'),
+      ])
+      if (catalogResult.error) throw catalogResult.error
+      if (heldResult.error) throw heldResult.error
+      if (historyResult.error) throw historyResult.error
       if (!active) return
+      const catalog = (catalogResult.data ?? []) as Badge[]
+      const held = new Set(((heldResult.data ?? []) as Array<{ badge_slug: string }>).map((row) => row.badge_slug))
+      const history = (historyResult.data ?? []) as Array<{ completed_at: string }>
+      const startedAt = (startResult.data as { started_at: string } | null)?.started_at
+      const earnedHere: string[] = []
+      if (priorRow) {
+        const earliest = history[0]?.completed_at
+        if (earliest && earliest === priorRow.completed_at) earnedHere.push('first_blood')
+        if (priorRow.score > 0 && priorRow.score === ((questionResult.data ?? []) as unknown[]).length) {
+          earnedHere.push('perfect_score')
+        }
+        if (startedAt && priorRow.score > 0) {
+          const elapsed = new Date(priorRow.completed_at).getTime() - new Date(startedAt).getTime()
+          if (elapsed >= 0 && elapsed <= FAST_MS) earnedHere.push('quick_draw')
+        }
+      }
+      setPaperBadges(catalog.filter((badge) => earnedHere.includes(badge.slug) && held.has(badge.slug)))
 
       setQuiz((quizResult.data as Quiz | null) ?? null)
       setQuestions(
@@ -157,10 +209,10 @@ export function QuizArena() {
         </div>
         {!reviewing && (
           <div className="text-right">
-            <p className={`font-mono text-lg ${secondsLeft < 60 ? 'text-danger' : 'text-brass'}`}>
+            <p className={`font-mono text-lg ${secondsLeft < 120 ? 'text-danger' : 'text-brass'}`}>
               {clock(secondsLeft)}
             </p>
-            <p className="text-xs text-muted">1 XP for each correct answer</p>
+            <p className="text-xs text-muted">30 minutes. Inside 4:00 with a correct answer earns Quick Draw.</p>
             {secondsLeft === 0 && <p className="text-sm text-danger">Time is up — submit what you have.</p>}
           </div>
         )}
@@ -172,15 +224,8 @@ export function QuizArena() {
             {score}/{total}
             {result ? ` · +${result.xp_earned} XP · streak ${result.current_streak}` : prior ? ` · +${prior.xp_earned} XP` : ''}
           </p>
-          {result && result.speed_bonus > 0 && (
-            <p className="mt-1 text-sm text-brass">Quick Draw +{result.speed_bonus} XP for finishing inside 4 minutes.</p>
-          )}
           {result?.rank_up && <p className="mt-1 text-sm text-foam">Promoted to {result.rank_up}.</p>}
-          {result && result.new_badges.length > 0 && (
-            <p className="mt-1 text-sm text-brass">
-              New badge{result.new_badges.length > 1 ? 's' : ''}: {result.new_badges.map((badge) => badge.name).join(', ')}
-            </p>
-          )}
+          <Achievements badges={result?.attempt_badges?.length ? result.attempt_badges : result?.new_badges ?? paperBadges} />
         </section>
       )}
 

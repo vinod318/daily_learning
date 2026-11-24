@@ -61,6 +61,7 @@ export type QuizResult = {
   rank_up: string | null
   breakdown: BreakdownItem[]
   new_badges: Badge[]
+  attempt_badges?: Badge[]
 }
 
 export type Submission = {

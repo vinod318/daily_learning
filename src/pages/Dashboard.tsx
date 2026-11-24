@@ -223,9 +223,10 @@ export function Dashboard() {
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <section>
-        <h2 className="text-sm uppercase tracking-wide text-muted">Badges</h2>
+        <h2 className="text-sm uppercase tracking-wide text-muted">Achievements</h2>
+        <p className="mt-1 text-xs text-muted">Earned badges stay on your record. Locked ones show what is still open.</p>
         <ul className="mt-3 grid gap-3 sm:grid-cols-2">
-          {catalog.map((badge) => {
+          {[...catalog].sort((a, b) => Number(earnedSlugs.has(b.slug)) - Number(earnedSlugs.has(a.slug))).map((badge) => {
             const have = earnedSlugs.has(badge.slug)
             return (
               <li
